@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPA Signer — Darkgpt</title>
+<style>
+  :root { --bg:#000; --fg:#fff; --dim:#888; --accent:#fff; --border:#222; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg); font-family:'JetBrains Mono','Courier New',monospace; min-height:100vh; display:flex; flex-direction:column; align-items:center; padding:40px 20px; }
+  .wrap { width:100%; max-width:720px; }
+  .head { border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:32px; }
+  .head h1 { font-size:22px; letter-spacing:2px; text-transform:uppercase; }
+  .head p { color:var(--dim); font-size:12px; margin-top:6px; }
+  .card { border:1px solid var(--border); padding:24px; margin-bottom:20px; background:#050505; }
+  .card h2 { font-size:14px; letter-spacing:1.5px; text-transform:uppercase; margin-bottom:16px; color:var(--dim); }
+  .drop { border:1px dashed #444; padding:32px; text-align:center; cursor:pointer; transition:.2s; position:relative; }
+  .drop:hover { border-color:#fff; background:#0a0a0a; }
+  .drop input { position:absolute; inset:0; opacity:0; cursor:pointer; }
+  .drop .lbl { font-size:13px; }
+  .drop .sub { color:var(--dim); font-size:11px; margin-top:6px; }
+  .row { display:flex; gap:12px; margin-top:12px; }
+  .row input { flex:1; background:#000; border:1px solid var(--border); color:#fff; padding:10px 12px; font-family:inherit; font-size:13px; }
+  .row input:focus { outline:none; border-color:#fff; }
+  .btn { background:#fff; color:#000; border:none; padding:10px 20px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; letter-spacing:1px; text-transform:uppercase; }
+  .btn:hover { background:#ccc; }
+  .btn:disabled { background:#333; color:#666; cursor:not-allowed; }
+  .status { margin-top:16px; font-size:12px; color:var(--dim); min-height:18px; }
+  .status.ok { color:#fff; }
+  .status.err { color:#ff4444; }
+  .progress { height:2px; background:#111; margin-top:12px; overflow:hidden; display:none; }
+  .progress .bar { height:100%; background:#fff; width:0%; transition:width .3s; }
+  .filelist { margin-top:12px; font-size:12px; color:var(--dim); }
+  .filelist .f { padding:4px 0; border-bottom:1px solid #111; display:flex; justify-content:space-between; }
+  .filelist .f .name { color:#fff; }
+  footer { margin-top:40px; color:#333; font-size:11px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <h1>IPA Signer</h1>
+    <p>upload ipa + cert zip — sign 100% — optional cert password</p>
+  </div>
+
+  <div class="card">
+    <h2>01 — IPA file</h2>
+    <div class="drop" id="ipaDrop">
+      <input type="file" id="ipaFile" accept=".ipa">
+      <div class="lbl">drop ipa here or click</div>
+      <div class="sub">.ipa only — one file</div>
+    </div>
+    <div class="filelist" id="ipaList"></div>
+  </div>
+
+  <div class="card">
+    <h2>02 — Certificate (zip)</h2>
+    <div class="drop" id="certDrop">
+      <input type="file" id="certFile" accept=".zip">
+      <div class="lbl">drop cert zip here or click</div>
+      <div class="sub">.zip containing .p12 + .mobileprovision — optional password</div>
+    </div>
+    <div class="row">
+      <input type="password" id="certPass" placeholder="cert password (optional)">
+    </div>
+    <div class="filelist" id="certList"></div>
+  </div>
+
+  <div class="card">
+    <h2>03 — Sign</h2>
+    <button class="btn" id="signBtn" disabled>Sign IPA</button>
+    <div class="progress" id="prog"><div class="bar" id="bar"></div></div>
+    <div class="status" id="status">waiting for files…</div>
+  </div>
+
+  <footer>darkgpt bench — ofx</footer>
+</div>
+
+<script>
+const ipaFile=document.getElementById('ipaFile');
+const certFile=document.getElementById('certFile');
+const ipaList=document.getElementById('ipaList');
+const certList=document.getElementById('certList');
+const signBtn=document.getElementById('signBtn');
+const status=document.getElementById('status');
+const prog=document.getElementById('prog');
+const bar=document.getElementById('bar');
+
+function fmtSize(b){ if(b<1024)return b+'B'; if(b<1048576)return (b/1024).toFixed(1)+'KB'; return (b/1048576).toFixed(1)+'MB'; }
+function showFile(el,file){ el.innerHTML=`<div class="f"><span class="name">${file.name}</span><span>${fmtSize(file.size)}</span></div>`; }
+function checkReady(){ signBtn.disabled=!(ipaFile.files[0]&&certFile.files[0]); status.textContent=signBtn.disabled?'waiting for files…':'ready to sign'; status.className='status'; }
+
+ipaFile.addEventListener('change',e=>{ if(e.target.files[0]){ showFile(ipaList,e.target.files[0]); checkReady(); }});
+certFile.addEventListener('change',e=>{ if(e.target.files[0]){ showFile(certList,e.target.files[0]); checkReady(); }});
+
+signBtn.addEventListener('click',async()=>{
+  const ipa=ipaFile.files[0]; const cert=certFile.files[0]; const pass=document.getElementById('certPass').value;
+  if(!ipa||!cert) return;
+  signBtn.disabled=true; prog.style.display='block'; bar.style.width='10%'; status.textContent='uploading…'; status.className='status';
+  const fd=new FormData();
+  fd.append('ipa',ipa);
+  fd.append('cert',cert);
+  fd.append('password',pass);
+  try {
+    const r=await fetch('/api/sign',{method:'POST',body:fd});
+    bar.style.width='60%';
+    if(!r.ok){ const e=await r.json().catch(()=>({error:'unknown'})); throw new Error(e.error||'sign failed'); }
+    const blob=await r.blob();
+    bar.style.width='100%';
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download=ipa.name.replace(/\.ipa$/,'')+'-signed.ipa';
+    a.click();
+    status.textContent='signed — download started'; status.className='status ok';
+  } catch(err){ status.textContent='error: '+err.message; status.className='status err'; }
+  finally { signBtn.disabled=false; setTimeout(()=>{prog.style.display='none';bar.style.width='0%';},1500); }
+});
+</script>
+</body>
+</html>
